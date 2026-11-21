@@ -1,0 +1,38 @@
+{
+    "name": "wsystem/shopware-e-invoice",
+    "description": "XRechnung 3.0 and EN 16931 e-invoices for Shopware 6 orders, validated through the W System API, downloadable from the order and attachable to order emails.",
+    "type": "shopware-platform-plugin",
+    "license": "GPL-3.0-or-later",
+    "version": "1.0.0",
+    "keywords": ["shopware", "xrechnung", "e-rechnung", "einvoice", "en16931", "peppol", "leitweg-id"],
+    "homepage": "https://wsystem.dev/shopware-xrechnung",
+    "authors": [{"name": "W System", "homepage": "https://wsystem.dev"}],
+    "support": {
+        "email": "hello@wsystem.dev",
+        "issues": "https://github.com/wsystemdev/shopware-e-invoice/issues"
+    },
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "shopware/core": "~6.5.0 || ~6.6.0 || ~6.7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5 || ^11.0"
+    },
+    "autoload": {"psr-4": {"WSystem\\EInvoice\\": "src/"}},
+    "autoload-dev": {"psr-4": {"WSystem\\EInvoice\\Tests\\": "tests/"}},
+    "extra": {
+        "shopware-plugin-class": "WSystem\\EInvoice\\WSystemEInvoice",
+        "label": {
+            "en-GB": "E-Invoice (XRechnung / EN 16931) by W System",
+            "de-DE": "E-Rechnung (XRechnung / EN 16931) von W System"
+        },
+        "description": {
+            "en-GB": "Creates XRechnung 3.0 and EN 16931 e-invoices for orders, checks them against the official rules, offers the XML for download on the order and attaches it to order emails.",
+            "de-DE": "Erstellt XRechnung 3.0 und EN 16931 E-Rechnungen für Bestellungen, prüft sie gegen die offiziellen Regeln, bietet das XML an der Bestellung zum Download an und hängt es an Bestell-E-Mails an."
+        },
+        "manufacturerLink": {"en-GB": "https://wsystem.dev", "de-DE": "https://wsystem.dev"},
+        "supportLink": {"en-GB": "mailto:hello@wsystem.dev", "de-DE": "mailto:hello@wsystem.dev"}
+    }
+}

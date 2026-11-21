@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSER_NO_SECURITY_BLOCKING: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        shopware: ["v6.6.10.9", "v6.7.15.1"]
+    steps:
+      - uses: shopware/setup-shopware@main
+        with:
+          shopware-version: ${{ matrix.shopware }}
+          php-version: "8.3"
+          install: true
+      - uses: actions/checkout@v4
+        with:
+          path: custom/plugins/WSystemEInvoice
+      - name: Install and activate the plugin
+        run: |
+          bin/console plugin:refresh
+          bin/console plugin:install --activate WSystemEInvoice
+          bin/console cache:clear
+          mysql -uroot -h127.0.0.1 shopware -N -e "SELECT name FROM custom_field_set WHERE name='wsystem_einvoice'" | grep -q wsystem_einvoice
+      - name: Unit tests
+        run: |
+          composer require --dev -W phpunit/phpunit:^11 --no-interaction --no-scripts || true
+          SHOPWARE_AUTOLOAD=$PWD/vendor/autoload.php vendor/bin/phpunit -c custom/plugins/WSystemEInvoice/phpunit.xml.dist
