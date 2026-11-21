@@ -9,7 +9,7 @@ Status: texts, screenshots and icon are ready. No Shopware Account / Extension P
 - Manufacturer: W System (https://wsystem.dev), support: hello@wsystem.dev, issues: https://github.com/wsystemdev/shopware-e-invoice/issues
 - Price: free (no locked features, no licence check), licence GPL-3.0-or-later
 - Compatibility: Shopware 6.5, 6.6, 6.7 (PHP 8.1+). Tested end to end on 6.6.10. Not for Shopware Cloud (plugins cannot be installed there)
-- Categories: Accounting / Invoicing (Buchhaltung / Rechnungen); tags: xrechnung, e-rechnung, zugferd (no: not generated), en16931, peppol, leitweg-id, e-invoice
+- Categories: Accounting / Invoicing (Buchhaltung / Rechnungen); tags: xrechnung, e-rechnung, en16931, peppol, leitweg-id, e-invoice
 - Extension prefix (Extension Partner profile): WSystem
 - Upload: https://github.com/wsystemdev/shopware-e-invoice/releases/latest/download/WSystemEInvoice.zip (`shopware-cli extension validate`: 0 errors, 2 deprecation warnings about services.xml / routes.xml)
 - Icon: src/Resources/config/plugin.png (256x256). Screenshots: store/screenshots/01-order-detail.png, 02-settings.png, 03-settings-seller.png
