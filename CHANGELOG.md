@@ -1,3 +1,6 @@
+# 1.0.1
+- "Test saved API key" button in the settings, failures are written to the Shopware log, API timeout 25 s.
+
 # 1.0.0
 - First release: XRechnung 3.0 (UBL), EN 16931 (UBL) and Peppol BIS Billing 3.0 structure e-invoices for Shopware 6 orders, validated through the W System API.
 - Automatic creation when an order is placed, paid or completed (or manual), download and re-create on the order detail page, optional attachment to order emails.

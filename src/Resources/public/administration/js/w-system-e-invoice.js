@@ -18,6 +18,8 @@
             lastError: 'Last error',
             done: 'E-invoice created.',
             failed: 'E-invoice could not be created.',
+            testKey: 'Test saved API key',
+            testHint: 'Save the settings first. The test checks the saved key against api.wsystem.dev.',
             hint: 'The order data is sent to api.wsystem.dev to build and check the e-invoice. Buyer reference (Leitweg-ID): see the "E-invoice (W System)" custom field set on this order or its customer.',
         },
     });
@@ -37,7 +39,30 @@
             lastError: 'Letzter Fehler',
             done: 'E-Rechnung erstellt.',
             failed: 'E-Rechnung konnte nicht erstellt werden.',
+            testKey: 'Gespeicherten API-Schlüssel testen',
+            testHint: 'Speichern Sie die Einstellungen zuerst. Der Test prüft den gespeicherten Schlüssel gegen api.wsystem.dev.',
             hint: 'Die Bestelldaten werden zur Erstellung und Prüfung der E-Rechnung an api.wsystem.dev gesendet. Käuferreferenz (Leitweg-ID): siehe Zusatzfeld-Set „E-Rechnung (W System)“ an dieser Bestellung oder am Kunden.',
+        },
+    });
+
+    Component.register('wsystem-einvoice-api-test', {
+        template: `
+<div class="wsystem-einvoice-api-test" style="margin-bottom:24px">
+    <sw-button size="small" :isLoading="busy" @click="run">{{ $tc('wsystem-einvoice.testKey') }}</sw-button>
+    <p v-if="message" :style="{ marginTop: '8px', color: ok ? '#1a7f37' : '#b42318' }">{{ message }}</p>
+    <p v-else style="margin-top:8px;font-size:12px;color:#6b7280">{{ $tc('wsystem-einvoice.testHint') }}</p>
+</div>`,
+        inject: ['loginService'],
+        data() { return { busy: false, ok: true, message: '' }; },
+        methods: {
+            run() {
+                this.busy = true;
+                Shopware.Application.getContainer('init').httpClient
+                    .post('/_action/wsystem-einvoice/test-api', {}, { headers: { Authorization: `Bearer ${this.loginService.getToken()}` } })
+                    .then((r) => { this.ok = !!r.data.ok; this.message = r.data.message; })
+                    .catch(() => { this.ok = false; this.message = 'Request failed.'; })
+                    .finally(() => { this.busy = false; });
+            },
         },
     });
 

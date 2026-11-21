@@ -25,7 +25,7 @@ class GenerateCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $context = Context::createDefaultContext();
+        $context = Context::createCLIContext();
         $order = $this->invoices->loadByNumber((string) $input->getArgument('orderNumber'), $context);
         if ($order === null) {
             $output->writeln('<error>Order not found</error>');

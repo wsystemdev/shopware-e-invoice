@@ -15,4 +15,13 @@ interface HttpTransport
      * @throws \RuntimeException on network errors
      */
     public function post(string $url, array $headers, string $body, int $timeoutSeconds): array;
+
+    /**
+     * @param array<string,string> $headers
+     *
+     * @return array{status:int,body:string}
+     *
+     * @throws \RuntimeException on network errors
+     */
+    public function get(string $url, array $headers, int $timeoutSeconds): array;
 }

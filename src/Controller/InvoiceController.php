@@ -5,6 +5,7 @@ namespace WSystem\EInvoice\Controller;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\PlatformRequest;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use WSystem\EInvoice\Service\InvoiceService;
@@ -14,6 +15,15 @@ class InvoiceController
 {
     public function __construct(private readonly InvoiceService $invoices)
     {
+    }
+
+    #[Route(path: '/api/_action/wsystem-einvoice/test-api', name: 'api.action.wsystem_einvoice.test_api', defaults: ['_acl' => ['system_config:read']], methods: ['POST'])]
+    public function testApi(Request $request): Response
+    {
+        $r = $this->invoices->testApiKey((string) $request->request->get('salesChannelId', '') ?: null);
+        $this->invoices->log($r['ok'] ? 'info' : 'warning', 'API test: ' . $r['message']);
+
+        return new JsonResponse($r);
     }
 
     #[Route(path: '/api/_action/wsystem-einvoice/order/{orderId}/status', name: 'api.action.wsystem_einvoice.status', defaults: ['_acl' => ['order:read']], methods: ['GET'])]

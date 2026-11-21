@@ -14,6 +14,11 @@ final class FakeTransport implements HttpTransport
     {
     }
 
+    public function get(string $url, array $headers, int $timeoutSeconds): array
+    {
+        return $this->post($url, $headers, '', $timeoutSeconds);
+    }
+
     public function post(string $url, array $headers, string $body, int $timeoutSeconds): array
     {
         $this->calls[] = ['url' => $url, 'headers' => $headers, 'body' => $body];

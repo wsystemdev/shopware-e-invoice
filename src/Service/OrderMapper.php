@@ -4,6 +4,8 @@ namespace WSystem\EInvoice\Service;
 
 use Shopware\Core\Checkout\Cart\Price\Struct\CalculatedPrice;
 use Shopware\Core\Checkout\Cart\Price\Struct\CartPrice;
+use Shopware\Core\Checkout\Cart\Tax\Struct\CalculatedTaxCollection;
+use Shopware\Core\Checkout\Cart\Tax\Struct\TaxRuleCollection;
 use Shopware\Core\Checkout\Order\Aggregate\OrderAddress\OrderAddressEntity;
 use Shopware\Core\Checkout\Order\OrderEntity;
 use WSystem\EInvoice\WSystemEInvoice;
@@ -22,8 +24,8 @@ final class OrderMapper
         $oc = $order->getOrderCustomer();
         $ids = $oc !== null ? $oc->getVatIds() : null;
         foreach ((array) $ids as $id) {
-            if (\is_string($id) && trim($id) !== '') {
-                return strtoupper((string) preg_replace('/[\s.\-]/', '', $id));
+            if (trim((string) $id) !== '') {
+                return strtoupper((string) preg_replace('/[\s.\-]/', '', (string) $id));
             }
         }
 
@@ -53,8 +55,11 @@ final class OrderMapper
     public static function invoiceNumber(OrderEntity $order): string
     {
         foreach ($order->getDocuments() ?? [] as $doc) {
-            $type = $doc->getDocumentType();
-            if ($type !== null && $type->getTechnicalName() === 'invoice') {
+            // 6.5 to 6.8 expose the type through the documentType association; newer versions through getTypeName().
+            $typeName = method_exists($doc, 'getTypeName') // @phpstan-ignore function.alreadyNarrowedType
+                ? $doc->getTypeName()
+                : $doc->getDocumentType()?->getTechnicalName(); // @phpstan-ignore method.deprecated, method.deprecatedClass
+            if ($typeName === 'invoice') {
                 $cfg = $doc->getConfig();
                 if (!empty($cfg['documentNumber'])) {
                     return (string) $cfg['documentNumber'];
@@ -281,7 +286,7 @@ final class OrderMapper
             }
             $payload = $item->getPayload() ?? [];
             $sku = (string) ($payload['productNumber'] ?? '');
-            $l = self::line((string) $item->getLabel(), (float) $item->getQuantity(), $item->getPrice() ?? new CalculatedPrice(0, 0, new \Shopware\Core\Checkout\Cart\Price\Struct\CalculatedTaxCollection(), new \Shopware\Core\Checkout\Cart\Tax\Struct\TaxRuleCollection()), $taxStatus, $zero, $small, $sku);
+            $l = self::line((string) $item->getLabel(), (float) $item->getQuantity(), $item->getPrice() ?? new CalculatedPrice(0, 0, new CalculatedTaxCollection(), new TaxRuleCollection()), $taxStatus, $zero, $small, $sku);
             if ($l !== null) {
                 $raw[] = $l;
             }

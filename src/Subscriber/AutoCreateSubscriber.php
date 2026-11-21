@@ -46,8 +46,8 @@ class AutoCreateSubscriber implements EventSubscriberInterface
         if ($event->getStateEventName() !== 'state_enter.order_transaction.state.paid') {
             return;
         }
-        $tx = $this->transactionRepository->search(new \Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria([$event->getTransition()->getEntityId()]), $event->getContext())->first();
-        if ($tx !== null) {
+        $tx = $this->transactionRepository->search(new \Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria([$event->getTransition()->getEntityId()]), $event->getContext())->getEntities()->first();
+        if ($tx instanceof \Shopware\Core\Checkout\Order\Aggregate\OrderTransaction\OrderTransactionEntity) {
             $this->run($tx->getOrderId(), 'paid', $event->getContext());
         }
     }
@@ -60,7 +60,7 @@ class AutoCreateSubscriber implements EventSubscriberInterface
                 $this->invoices->generate($order, $context);
             }
         } catch (\Throwable $e) {
-            // never block the shop
+            $this->invoices->log('error', 'Automatic e-invoice creation failed: ' . $e->getMessage());
         }
     }
 }

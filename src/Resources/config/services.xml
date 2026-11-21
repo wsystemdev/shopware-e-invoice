@@ -11,6 +11,7 @@
             <argument type="service" id="order.repository"/>
             <argument type="service" id="Shopware\Core\System\SystemConfig\SystemConfigService"/>
             <argument type="service" id="WSystem\EInvoice\Service\ApiClient"/>
+            <argument type="service" id="logger"/>
         </service>
         <service id="WSystem\EInvoice\Subscriber\AutoCreateSubscriber">
             <argument type="service" id="WSystem\EInvoice\Service\InvoiceService"/>

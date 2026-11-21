@@ -11,6 +11,9 @@
             <helpText>Without a key the free tier applies (20 API calls per day per server IP). Order data is sent to api.wsystem.dev to build and check the e-invoice. Get a free key (no card) at https://api.wsystem.dev/account/free-key?ref=shopware-einvoice</helpText>
             <helpText lang="de-DE">Ohne Schlüssel gilt die kostenlose Stufe (20 API-Aufrufe pro Tag und Server-IP). Bestelldaten werden zur Erstellung und Prüfung an api.wsystem.dev gesendet. Kostenloser Schlüssel (ohne Karte): https://api.wsystem.dev/account/free-key?ref=shopware-einvoice</helpText>
         </input-field>
+        <component name="wsystem-einvoice-api-test">
+            <name>apiTest</name>
+        </component>
         <input-field type="single-select">
             <name>format</name>
             <label>Format</label>
@@ -30,7 +33,7 @@
             <options>
                 <option><id>completed</id><name>When the order is completed</name><name lang="de-DE">Wenn die Bestellung abgeschlossen ist</name></option>
                 <option><id>paid</id><name>When the order is paid</name><name lang="de-DE">Wenn die Bestellung bezahlt ist</name></option>
-                <option><id>placed</id><name>When the order is placed</name><name lang="de-DE">Wenn die Bestellung aufgegeben wird</name></option>
+                <option><id>placed</id><name>When the order is placed (adds the API time to checkout)</name><name lang="de-DE">Wenn die Bestellung aufgegeben wird (verlängert den Checkout um die API-Zeit)</name></option>
                 <option><id>off</id><name>Never (manual only, from the order)</name><name lang="de-DE">Nie (nur manuell an der Bestellung)</name></option>
             </options>
         </input-field>

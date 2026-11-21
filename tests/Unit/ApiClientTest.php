@@ -51,4 +51,17 @@ final class ApiClientTest extends TestCase
         self::assertFalse($r['ok']);
         self::assertSame('b', $r['error']);
     }
+
+    public function testKeyTestVariants(): void
+    {
+        $ok = (new ApiClient(new FakeTransport([['status' => 200, 'body' => '{"plan":"free","quota":500,"remaining":269}']])))->testKey('k');
+        self::assertTrue($ok['ok']);
+        self::assertStringContainsString('269 of 500', $ok['message']);
+        $bad = (new ApiClient(new FakeTransport([['status' => 401, 'body' => '{"error":"invalid_api_key"}']])))->testKey('k');
+        self::assertFalse($bad['ok']);
+        self::assertStringContainsString('not accepted', $bad['message']);
+        self::assertTrue((new ApiClient(new FakeTransport([])))->testKey(' ')['ok']);
+        $down = (new ApiClient(new FakeTransport([new \RuntimeException('ssl')])))->testKey('k');
+        self::assertFalse($down['ok']);
+    }
 }

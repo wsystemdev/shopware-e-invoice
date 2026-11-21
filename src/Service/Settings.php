@@ -44,10 +44,12 @@ final class Settings
 
     public static function load(SystemConfigService $config, ?string $salesChannelId): self
     {
-        $raw = $config->getDomain(self::DOMAIN, $salesChannelId, true);
         $values = [];
-        foreach ($raw as $key => $value) {
-            $values[str_starts_with($key, self::DOMAIN . '.') ? substr($key, \strlen(self::DOMAIN) + 1) : $key] = $value;
+        foreach (array_keys(self::DEFAULTS) as $key) {
+            $value = $config->get(self::DOMAIN . '.' . $key, $salesChannelId);
+            if ($value !== null) {
+                $values[$key] = $value;
+            }
         }
 
         return new self($values);

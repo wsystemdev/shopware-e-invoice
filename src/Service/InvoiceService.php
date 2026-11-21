@@ -6,6 +6,7 @@ use Shopware\Core\Checkout\Order\OrderEntity;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Psr\Log\LoggerInterface;
 use Shopware\Core\System\SystemConfig\SystemConfigService;
 
 /**
@@ -27,7 +28,8 @@ class InvoiceService
     public function __construct(
         private readonly EntityRepository $orderRepository,
         private readonly SystemConfigService $config,
-        private readonly ApiClient $api
+        private readonly ApiClient $api,
+        private readonly ?LoggerInterface $logger = null
     ) {
     }
 
@@ -39,7 +41,7 @@ class InvoiceService
             'transactions.stateMachineState', 'transactions.paymentMethod', 'documents.documentType',
         ]);
         /** @var OrderEntity|null $order */
-        $order = $this->orderRepository->search($criteria, $context)->first();
+        $order = $this->orderRepository->search($criteria, $context)->getEntities()->first();
 
         return $order;
     }
@@ -51,6 +53,21 @@ class InvoiceService
         $id = $this->orderRepository->searchIds($criteria, $context)->firstId();
 
         return $id ? $this->loadOrder($id, $context) : null;
+    }
+
+    /**
+     * Tests the saved API key (used by the "Test API key" button in the plugin settings).
+     *
+     * @return array{ok:bool,message:string}
+     */
+    public function testApiKey(?string $salesChannelId): array
+    {
+        return $this->api->testKey(Settings::load($this->config, $salesChannelId)->str('apiKey'));
+    }
+
+    public function log(string $level, string $message): void
+    {
+        $this->logger?->log($level, '[WSystemEInvoice] ' . $message);
     }
 
     public function settingsFor(OrderEntity $order): Settings
@@ -84,6 +101,7 @@ class InvoiceService
         $res = $this->api->create($body, $s->str('apiKey'));
         if (!$res['ok']) {
             $this->store($order, $context, [self::F_LAST_ERROR => $res['error']]);
+            $this->log('warning', sprintf('E-invoice for order %s could not be created: %s', (string) $order->getOrderNumber(), $res['error']));
 
             return ['valid' => false, 'error' => $res['error'], 'errors' => []];
         }
