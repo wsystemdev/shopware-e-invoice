@@ -2,6 +2,7 @@
 - Neu (beide Optionen sind standardmäßig AUS, bestehende Shops verhalten sich unverändert): ZUGFeRD / Factur-X PDF (EN 16931, PDF/A-3b mit eingebetteter XML) statt nur XML sowie automatische Gutschriften (Typ 381, mit Verweis auf die ursprüngliche E-Rechnung) bei stornierten Bestellungen, erstatteten Zahlungen und Shopware-Erstattungen (erstattete Positionen).
 - Bestell-E-Mails enthalten statt der XML das ZUGFeRD-PDF, sofern vorhanden; die Gutschrift wird (optional) an die Stornierungs- bzw. Erstattungs-E-Mail angehängt.
 - Admin-API: Download von PDF und Gutschriften (`/api/_action/wsystem-einvoice/order/{id}/download-pdf`, `/credit-notes`).
+- Die automatische Erstellung bei „bezahlt“ / „abgeschlossen“ läuft jetzt vor dem Bau der Bestell-E-Mail, sodass die E-Rechnung an genau diese E-Mail angehängt werden kann.
 - Gutschriften nur für Bestellungen mit bereits gültiger E-Rechnung; stornierte Bestellung und erstattete Zahlung erzeugen eine Gutschrift, nicht zwei.
 
 # 1.0.1

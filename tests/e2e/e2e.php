@@ -145,5 +145,97 @@ if (getenv('MAIL_CAPTURE_GLOB')) {
     }
     ok($found, "D order $numD: order confirmation email carries the e-invoice XML attachment");
 }
+
+// --- E: ZUGFeRD PDF + credit notes (1.1.0). Both options are OFF by default; this section turns them on.
+// E1: order paid -> ZUGFeRD PDF; order cancelled -> ONE credit note; the payment refunded afterwards must not create a second one.
+// E2: paid order, payment refunded (no Shopify refund record) -> one credit note. Mail parts need MAIL_CAPTURE_GLOB (see D).
+foreach (['trigger' => 'paid', 'zugferd' => 'true', 'creditNotes' => 'true', 'attachCreditNote' => 'true', 'attachEmail' => 'true', 'attachPaid' => 'true'] as $k => $v) {
+    shell_exec('bin/console system:config:set ' . escapeshellarg('WSystemEInvoice.config.' . $k) . ' ' . escapeshellarg($v) . ' 2>&1');
+}
+sw('cache:pool:clear cache.object');
+$mails = fn () => getenv('MAIL_CAPTURE_GLOB') ? (glob(getenv('MAIL_CAPTURE_GLOB')) ?: []) : [];
+$mailWith = function (string $to, string $fileRe) use ($mails) {
+    foreach ($mails() as $f) { $eml = file_get_contents($f); if (stripos($eml, $to) !== false && preg_match($fileRe, $eml)) { return true; } }
+    return false;
+};
+$drain = function () { for ($i = 0; $i < 2; ++$i) { shell_exec('bin/console messenger:consume async low_priority --limit=30 --time-limit=8 2>&1'); } };
+$cnState = function (string $oid) use ($admin) { [$c, $l] = $admin('GET', "/_action/wsystem-einvoice/order/$oid/credit-notes"); return is_array($l) ? $l : []; };
+$paidOrder = function (string $tag) use ($order, $addr, $de, $p19, $p7, $prepay, $stamp, $transition, $admin) {
+    [$oid, $num] = $order(['accountType' => 'private', 'firstName' => 'Erika', 'lastName' => "Gut$tag", 'email' => strtolower($tag) . "$stamp@example.com", 'billingAddress' => $addr($de)], [[$p19, 2], [$p7, 1]], $prepay);
+    $transition($oid, 'process');
+    $txid = db("SELECT LOWER(HEX(id)) FROM order_transaction WHERE order_id=UNHEX('$oid') LIMIT 1");
+    $admin('POST', "/_action/order_transaction/$txid/state/paid", []);
+    return [$oid, $num, $txid, strtolower($tag) . "$stamp@example.com"];
+};
+// state machine names the plugin listens to (checked on the live DB)
+ok(db("SELECT COUNT(*) FROM state_machine_transition t JOIN state_machine m ON m.id=t.state_machine_id JOIN state_machine_state s ON s.id=t.to_state_id WHERE m.technical_name='order.state' AND s.technical_name='cancelled'") > 0, 'E: order.state has a transition into "cancelled"');
+ok(db("SELECT COUNT(*) FROM state_machine_transition t JOIN state_machine m ON m.id=t.state_machine_id JOIN state_machine_state s ON s.id=t.to_state_id WHERE m.technical_name='order_transaction.state' AND s.technical_name='refunded'") > 0, 'E: order_transaction.state has a transition into "refunded"');
+
+// E1
+foreach ($mails() as $f) { @unlink($f); }
+[$oid1, $num1, $tx1, $mail1] = $paidOrder('E1');
+$drain();
+[$c, $st] = $admin('GET', "/_action/wsystem-einvoice/order/$oid1/status");
+ok(($st['exists'] ?? false) && ($st['valid'] ?? false) && ($st['format'] ?? '') === 'zugferd', "E1 order $num1: valid ZUGFeRD e-invoice created on paid" . (($st['lastError'] ?? '') ? ' (' . $st['lastError'] . ')' : ''));
+[$c, , , $pdf] = http('GET', "$base/api/_action/wsystem-einvoice/order/$oid1/download-pdf", null, $auth);
+ok($c === 200 && str_starts_with($pdf, '%PDF') && str_contains($pdf, 'factur-x.xml'), "E1 order $num1: PDF download is a PDF with embedded factur-x.xml");
+file_put_contents('/tmp/e2e-E1.pdf', $pdf);
+if (getenv('MAIL_CAPTURE_GLOB')) { ok($mailWith($mail1, '/filename="?e-invoice-[^"\s;]+\.pdf/i'), "E1 order $num1: payment mail carries the ZUGFeRD PDF attachment"); }
+ok($cnState($oid1) === [], 'E1: no credit note before the cancellation');
+foreach ($mails() as $f) { @unlink($f); }
+[$c] = $transition($oid1, 'cancel'); ok($c < 300, "E1 order $num1: cancel transition");
+$drain();
+$cn = $cnState($oid1);
+ok(count($cn) === 1 && ($cn[0]['valid'] ?? false) === true, "E1 order $num1: exactly one valid credit note after cancel" . (isset($cn[0]['lastError']) && $cn[0]['lastError'] !== '' ? ' (' . $cn[0]['lastError'] . ')' : ''));
+ok(str_starts_with((string) ($cn[0]['number'] ?? ''), 'CN-') && ($cn[0]['original'] ?? '') === ($st['number'] ?? 'x'), 'E1: credit note references the original invoice number');
+[$c, , , $x] = http('GET', "$base/api/_action/wsystem-einvoice/order/$oid1/credit-notes/0/download", null, $auth);
+ok($c === 200 && str_contains($x, 'CrossIndustryInvoice') && str_contains($x, '>381<') && str_contains($x, (string) ($st['number'] ?? '?')), 'E1: credit note XML is CII type 381 with the original invoice referenced');
+if (getenv('MAIL_CAPTURE_GLOB')) { ok($mailWith($mail1, '/filename="?credit-note-CN-[^"\s;]+\.pdf/i'), 'E1: cancellation mail carries the credit note PDF (credit note existed before the mail was built)'); }
+[$c] = $admin('POST', "/_action/order_transaction/$tx1/state/refund", []); ok($c < 300, 'E1: payment refunded after the cancellation');
+$drain();
+ok(count($cnState($oid1)) === 1, 'E1: still exactly one credit note after cancel + refund');
+
+// E2
+foreach ($mails() as $f) { @unlink($f); }
+[$oid2, $num2, $tx2, $mail2] = $paidOrder('E2');
+$drain();
+[$c, $st2] = $admin('GET', "/_action/wsystem-einvoice/order/$oid2/status");
+ok(($st2['exists'] ?? false) && ($st2['valid'] ?? false), "E2 order $num2: e-invoice created on paid");
+foreach ($mails() as $f) { @unlink($f); }
+[$c] = $admin('POST', "/_action/order_transaction/$tx2/state/refund", []); ok($c < 300, "E2 order $num2: refund transition (payment refunded)");
+$drain();
+$cn2 = $cnState($oid2);
+ok(count($cn2) === 1 && ($cn2[0]['valid'] ?? false) === true, "E2 order $num2: one valid credit note after the refund" . (isset($cn2[0]['lastError']) && $cn2[0]['lastError'] !== '' ? ' (' . $cn2[0]['lastError'] . ')' : ''));
+if (getenv('MAIL_CAPTURE_GLOB')) { ok($mailWith($mail2, '/filename="?credit-note-CN-[^"\s;]+\.pdf/i'), 'E2: refund mail carries the credit note PDF'); }
+// replay: the same transition again must not add a note
+$admin('POST', "/_action/order_transaction/$tx2/state/refund", []); $drain();
+ok(count($cnState($oid2)) === 1, 'E2: no second credit note on replay');
+// E3: partial Shopware refund (order_transaction_capture_refund with a position): credit note for the refunded position only.
+foreach ($mails() as $f) { @unlink($f); }
+[$oid3, $num3, $tx3, $mail3] = $paidOrder('E3');
+$drain();
+$li = db("SELECT LOWER(HEX(id)) FROM order_line_item WHERE order_id=UNHEX('$oid3') AND label='Test Widget 19' LIMIT 1");
+$calc = fn (float $gross, float $tax, int $qty) => ['unitPrice' => round($gross / $qty, 2), 'quantity' => $qty, 'totalPrice' => $gross, 'calculatedTaxes' => [['tax' => $tax, 'taxRate' => 19, 'price' => $gross]], 'taxRules' => [['taxRate' => 19, 'percentage' => 100]]];
+$cap = bin2hex(random_bytes(16)); $ref = bin2hex(random_bytes(16));
+$openState = fn (string $machine, string $name = 'open') => db("SELECT LOWER(HEX(s.id)) FROM state_machine_state s JOIN state_machine m ON m.id=s.state_machine_id WHERE m.technical_name='$machine' AND s.technical_name='$name'");
+[$c1, $r1] = $admin('POST', '/order-transaction-capture', ['id' => $cap, 'orderTransactionId' => $tx3, 'stateId' => $openState('order_transaction_capture.state', 'pending'), 'externalReference' => 'e2e-cap', 'amount' => $calc(59.98, 9.58, 2)]);
+[$c2, $r2] = $admin('POST', '/order-transaction-capture-refund', ['id' => $ref, 'captureId' => $cap, 'stateId' => $openState('order_transaction_capture_refund.state'), 'externalReference' => 'e2e-ref', 'amount' => $calc(29.99, 4.79, 1),
+    'positions' => [['orderLineItemId' => $li, 'quantity' => 1, 'amount' => $calc(29.99, 4.79, 1), 'externalReference' => 'e2e-pos']]]);
+ok($c1 < 300 && $c2 < 300, "E3 order $num3: capture + refund records created" . ($c1 >= 300 ? ' ' . json_encode($r1) : '') . ($c2 >= 300 ? ' ' . json_encode($r2) : ''));
+foreach ($mails() as $f) { @unlink($f); }
+foreach (['process', 'complete'] as $act) { [$c] = $admin('POST', "/_action/state-machine/order_transaction_capture_refund/$ref/state/$act", []); }
+$drain();
+$cn3 = $cnState($oid3);
+ok(count($cn3) === 1 && ($cn3[0]['valid'] ?? false) === true && ($cn3[0]['key'] ?? '') === "refund-$ref", "E3 order $num3: one valid credit note for the refund record" . (isset($cn3[0]['lastError']) && $cn3[0]['lastError'] !== '' ? ' (' . $cn3[0]['lastError'] . ')' : ''));
+[$c, , , $x3] = http('GET', "$base/api/_action/wsystem-einvoice/order/$oid3/credit-notes/0/download", null, $auth);
+ok($c === 200 && str_contains($x3, '>381<') && str_contains($x3, '>25.20<'), 'E3: credit note covers only the refunded position (net 25.20)');
+// the payment state turning "refunded" afterwards must not add a whole-order credit note (refund records exist)
+$admin('POST', "/_action/order_transaction/$tx3/state/refund", []); $drain();
+ok(count($cnState($oid3)) === 1, 'E3: still one credit note after the payment state became refunded');
+
+// leave the shop config as the other sections expect it
+foreach (['zugferd' => 'false', 'creditNotes' => 'false', 'trigger' => 'completed'] as $k => $v) { shell_exec('bin/console system:config:set ' . escapeshellarg('WSystemEInvoice.config.' . $k) . ' ' . escapeshellarg($v) . ' 2>&1'); }
+sw('cache:pool:clear cache.object');
+
 echo "\nRESULT: $pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

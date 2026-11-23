@@ -58,7 +58,7 @@ class CreditNoteSubscriber implements EventSubscriberInterface
             // Shopware refund records exist: the credit note comes from them (onRefundState), not from the payment state
             if ($this->refundRepository !== null) {
                 $c = new Criteria();
-                $c->addFilter(new EqualsFilter('transactionCapture.transactionId', $id));
+                $c->addFilter(new EqualsFilter('transactionCapture.orderTransactionId', $id));
                 $c->setLimit(1);
                 if ($this->refundRepository->searchIds($c, $event->getContext())->getTotal() > 0) {
                     return;

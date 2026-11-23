@@ -24,8 +24,9 @@ class AutoCreateSubscriber implements EventSubscriberInterface
     {
         return [
             CheckoutOrderPlacedEvent::class => 'onPlaced',
-            'state_machine.order.state_changed' => 'onOrderState',
-            'state_machine.order_transaction.state_changed' => 'onTransactionState',
+            // priority above the mail flow, so the e-invoice exists when the "paid" / "completed" email is built and can be attached
+            'state_machine.order.state_changed' => ['onOrderState', 100],
+            'state_machine.order_transaction.state_changed' => ['onTransactionState', 100],
         ];
     }
 

@@ -94,7 +94,11 @@ final class CreditNoteSubscriberTest extends TestCase
         $svc2 = $this->createMock(InvoiceService::class);
         $svc2->expects(self::never())->method('createCreditNote');
         $some = $this->createMock(EntityRepository::class);
-        $some->method('searchIds')->willReturn(new IdSearchResult(1, [['primaryKey' => 'r1', 'data' => []]], new \Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria(), Context::createDefaultContext()));
+        $some->expects(self::once())->method('searchIds')->with(self::callback(static function ($c) {
+            $f = $c->getFilters()[0] ?? null;
+
+            return $f instanceof \Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter && $f->getField() === 'transactionCapture.orderTransactionId' && $f->getValue() === 't1'; // field name checked on a real Shopware (e2e)
+        }))->willReturn(new IdSearchResult(1, [['primaryKey' => 'r1', 'data' => []]], new \Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria(), Context::createDefaultContext()));
         (new CreditNoteSubscriber($svc2, $txRepo, $some))->onTransactionState($this->event('order_transaction.state', 't1', 'refunded'));
     }
 
@@ -134,5 +138,15 @@ final class CreditNoteSubscriberTest extends TestCase
         $svc->method('shouldCreateCreditNote')->willReturn(true);
         $svc->expects(self::once())->method('createCreditNote')->with(self::anything(), self::anything(), 'refund-abcdef0123456789', self::callback(static fn ($l) => \count($l) === 1 && $l[0]['qty'] === 2.0 && $l[0]['label'] === 'Widget' && $l[0]['sku'] === 'W-1'));
         (new CreditNoteSubscriber($svc, $this->createMock(EntityRepository::class), $repo))->onRefundState($this->event('order_transaction_capture_refund.state', 'abcdef0123456789', 'completed'));
+    }
+
+    public function testListensBeforeTheMailFlow(): void
+    {
+        foreach (CreditNoteSubscriber::getSubscribedEvents() as $listener) {
+            self::assertSame(100, $listener[1]);
+        }
+        foreach (['state_machine.order.state_changed', 'state_machine.order_transaction.state_changed'] as $e) {
+            self::assertSame(100, \WSystem\EInvoice\Subscriber\AutoCreateSubscriber::getSubscribedEvents()[$e][1]);
+        }
     }
 }
