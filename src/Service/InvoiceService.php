@@ -24,6 +24,8 @@ class InvoiceService
     public const F_MISMATCH = 'wsystem_einvoice_mismatch';
     public const F_CREATED = 'wsystem_einvoice_created';
     public const F_LAST_ERROR = 'wsystem_einvoice_last_error';
+    public const F_PDF = 'wsystem_einvoice_pdf';
+    public const F_CREDIT_NOTES = 'wsystem_einvoice_credit_notes';
 
     public function __construct(
         private readonly EntityRepository $orderRepository,
@@ -129,10 +131,106 @@ class InvoiceService
             self::F_TOTALS => $totals,
             self::F_MISMATCH => $mismatch,
             self::F_CREATED => gmdate('c'),
+            self::F_PDF => $valid && $body['format'] === 'zugferd' && !empty($d['pdf_base64']) ? (string) $d['pdf_base64'] : null,
             self::F_LAST_ERROR => null,
         ]);
 
         return ['valid' => $valid, 'error' => '', 'errors' => $errors];
+    }
+
+    /**
+     * Credit notes already stored on the order (newest last).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public static function creditNotes(OrderEntity $order): array
+    {
+        $v = ($order->getCustomFields() ?? [])[self::F_CREDIT_NOTES] ?? [];
+
+        return \is_array($v) ? array_values($v) : [];
+    }
+
+    /**
+     * Whether a credit note with this key should be created now: option on, a valid e-invoice exists, the key is new,
+     * and for a full credit note ($full) none exists yet (cancelled order and refunded payment must not both credit it).
+     */
+    public function shouldCreateCreditNote(OrderEntity $order, string $key, bool $full): bool
+    {
+        if (!$this->settingsFor($order)->bool('creditNotes')) {
+            return false;
+        }
+        $st = self::status($order);
+        if (!$st['exists'] || !$st['valid']) {
+            return false;
+        }
+        foreach (self::creditNotes($order) as $cn) {
+            if (($cn['key'] ?? '') === $key || ($full && !empty($cn['full']) && !empty($cn['valid']))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param list<array{label:string,qty:float,price:\Shopware\Core\Checkout\Cart\Price\Struct\CalculatedPrice,sku?:string}>|null $refundLines null = credit the whole order
+     *
+     * @return array{valid:bool,error:string,errors:list<array{rule_id:string,message:string,fix:string}>,skipped:bool}
+     */
+    public function createCreditNote(OrderEntity $order, Context $context, string $key, ?array $refundLines = null): array
+    {
+        $full = $refundLines === null;
+        if (!$this->shouldCreateCreditNote($order, $key, $full)) {
+            return ['valid' => false, 'error' => '', 'errors' => [], 'skipped' => true];
+        }
+        $s = $this->settingsFor($order);
+        $cf = $order->getCustomFields() ?? [];
+        $origNumber = (string) ($cf[self::F_NUMBER] ?? OrderMapper::invoiceNumber($order));
+        $origDate = substr((string) ($cf[self::F_CREATED] ?? ''), 0, 10) ?: $order->getOrderDateTime()->format('Y-m-d');
+        $body = OrderMapper::creditNote($order, $s, $key, $origNumber, $origDate, $refundLines);
+        if ($body['lines'] === []) {
+            return ['valid' => false, 'error' => '', 'errors' => [], 'skipped' => true];
+        }
+        $res = $this->api->create($body, $s->str('apiKey'));
+        $entry = ['key' => $key, 'full' => $full, 'number' => $body['invoice_number'], 'original' => $origNumber, 'created' => gmdate('c'), 'valid' => false, 'xml' => '', 'pdf' => null, 'errors' => [], 'lastError' => ''];
+        if (!$res['ok']) {
+            $entry['lastError'] = $res['error'];
+            $this->log('warning', sprintf('Credit note for order %s could not be created: %s', (string) $order->getOrderNumber(), $res['error']));
+        } else {
+            $d = $res['data'];
+            $entry['valid'] = !empty($d['valid']);
+            foreach (\is_array($d['errors'] ?? null) ? $d['errors'] : [] as $e) {
+                $entry['errors'][] = ['rule_id' => (string) ($e['rule_id'] ?? ''), 'message' => (string) ($e['explain']['what'] ?? $e['message'] ?? ''), 'fix' => (string) ($e['explain']['fix'] ?? $e['fix'] ?? '')];
+            }
+            if ($entry['valid']) {
+                $entry['xml'] = (string) ($d['xml'] ?? '');
+                $entry['pdf'] = $body['format'] === 'zugferd' && !empty($d['pdf_base64']) ? (string) $d['pdf_base64'] : null;
+            }
+        }
+        // keep failed attempts too (visible to the merchant), but replace an earlier failed one with the same key
+        $list = array_values(array_filter(self::creditNotes($order), static fn ($c) => ($c['key'] ?? '') !== $key));
+        $list[] = $entry;
+        $this->store($order, $context, [self::F_CREDIT_NOTES => $list]);
+
+        return ['valid' => $entry['valid'], 'error' => $entry['lastError'], 'errors' => $entry['errors'], 'skipped' => false];
+    }
+
+    public static function pdf(OrderEntity $order): string
+    {
+        return (string) (($order->getCustomFields() ?? [])[self::F_PDF] ?? '');
+    }
+
+    public static function pdfFileName(OrderEntity $order): string
+    {
+        return preg_replace('/\.xml$/', '.pdf', self::fileName($order)) ?? 'e-invoice.pdf';
+    }
+
+    /**
+     * @param array<string,mixed> $cn
+     */
+    public static function creditNoteFileName(array $cn, string $ext): string
+    {
+        return 'credit-note-' . preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) ($cn['number'] ?? 'cn')) . '.' . $ext;
     }
 
     /**

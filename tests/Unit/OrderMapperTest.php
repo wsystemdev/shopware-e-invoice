@@ -205,4 +205,70 @@ final class OrderMapperTest extends TestCase
         self::assertFalse($s->bool('attachShipped'));
         self::assertSame('completed', $s->str('trigger'));
     }
+
+    public function testZugferdAndCreditNoteOptionsAreOffByDefault(): void
+    {
+        $s = new Settings([]);
+        self::assertFalse($s->bool('zugferd'));
+        self::assertFalse($s->bool('creditNotes'));
+        self::assertTrue($s->bool('attachCreditNote'));
+        self::assertSame('xrechnung', OrderMapper::formatFor($s));
+        self::assertSame('en16931', OrderMapper::formatFor(new Settings(['format' => 'en16931'])));
+    }
+
+    public function testZugferdOptionSwitchesFormatButNotPeppol(): void
+    {
+        $o = $this->order();
+        $o->setLineItems(new OrderLineItemCollection([$this->item('p', 'Thing', 1, $this->price(119.0, 19, 19.0))]));
+        self::assertSame('zugferd', OrderMapper::invoice($o, $this->settings(['zugferd' => true]))['format']);
+        self::assertSame('zugferd', OrderMapper::invoice($o, $this->settings(['zugferd' => true, 'format' => 'en16931']))['format']);
+        self::assertSame('peppol-bis3', OrderMapper::invoice($o, $this->settings(['zugferd' => true, 'format' => 'peppol-bis3']))['format']);
+        self::assertSame('xrechnung', OrderMapper::invoice($o, $this->settings(['zugferd' => false]))['format']);
+    }
+
+    public function testFullCreditNoteReferencesOriginalAndHasNoPrepaid(): void
+    {
+        $o = $this->order();
+        $o->setLineItems(new OrderLineItemCollection([
+            $this->item('l1', 'Widget', 3, $this->price(89.97, 19, 14.36, 3)),
+            $this->item('l2', 'Book', 1, $this->price(19.90, 7, 1.30)),
+        ]));
+        $b = OrderMapper::creditNote($o, $this->settings(), 'order-cancelled', '10001', '2026-11-20', null, new \DateTimeImmutable('2026-11-22'));
+        self::assertSame('381', $b['type_code']);
+        self::assertSame('10001', $b['preceding_invoice']);
+        self::assertSame('2026-11-20', $b['preceding_invoice_date']);
+        self::assertSame('CN-10001-ancelled', $b['invoice_number']);
+        self::assertSame('2026-11-22', $b['issue_date']);
+        self::assertArrayNotHasKey('prepaid_amount', $b);
+        self::assertCount(2, $b['lines']);
+        self::assertSame('58', $b['payment']['means_code']);
+        self::assertSame('xrechnung', $b['format']);
+    }
+
+    public function testPartialCreditNoteUsesOnlyRefundedLinesAtTheirRates(): void
+    {
+        $o = $this->order();
+        $o->setLineItems(new OrderLineItemCollection([$this->item('l1', 'Widget', 3, $this->price(89.97, 19, 14.36, 3))]));
+        $b = OrderMapper::creditNote($o, $this->settings(['zugferd' => true, 'sellerIban' => '']), 'refund-abc123', '10001', '2026-11-20', [
+            ['label' => 'Widget', 'qty' => 1.0, 'price' => $this->price(29.99, 19, 4.79), 'sku' => 'W-1'],
+        ], new \DateTimeImmutable('2026-11-22'));
+        self::assertSame('zugferd', $b['format']);
+        self::assertCount(1, $b['lines']);
+        self::assertSame(25.2, $b['lines'][0]['unit_price']);
+        self::assertSame(19.0, $b['lines'][0]['vat_rate']);
+        self::assertSame('W-1', $b['lines'][0]['seller_item_id']);
+        self::assertSame('1', $b['payment']['means_code']);
+        self::assertArrayNotHasKey('iban', $b['payment']);
+        self::assertStringStartsWith('CN-10001-', $b['invoice_number']);
+    }
+
+    public function testCreditNoteSmallBusinessKeepsCategoryE(): void
+    {
+        $o = $this->order();
+        $b = OrderMapper::creditNote($o, $this->settings(['smallBusiness' => true]), 'k1', '10001', '2026-11-20', [
+            ['label' => 'Thing', 'qty' => 1.0, 'price' => $this->price(50.0, 0, 0)],
+        ]);
+        self::assertSame('E', $b['lines'][0]['vat_category']);
+        self::assertArrayHasKey('vat_exemption_reason', $b);
+    }
 }

@@ -33,6 +33,9 @@ final class Settings
         'sellerIban' => '',
         'sellerBic' => '',
         'paymentTerms' => '',
+        'zugferd' => false,
+        'creditNotes' => false,
+        'attachCreditNote' => true,
     ];
 
     /**

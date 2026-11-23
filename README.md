@@ -20,7 +20,11 @@ Shopware 6 plugin that creates **XRechnung 3.0** and **EN 16931** e-invoices (UB
 - Totals are matched to the Shopware order total to the cent
 - English and German
 
-Not yet: CII output (the API builds UBL), ZUGFeRD / Factur-X PDF, credit notes for cancellations, Peppol sending from the shop. Not tax or legal advice.
+Since 1.1.0 (settings card "ZUGFeRD and credit notes", both options OFF by default):
+* **ZUGFeRD / Factur-X PDF** (EN 16931, PDF/A-3b with `factur-x.xml` embedded) instead of XML only; the PDF is attached to order emails instead of the XML. Not used with the Peppol BIS format.
+* **Credit notes** (type 381, referencing the original e-invoice number and date) created automatically when an order is cancelled, a payment is refunded, or a Shopware refund is completed (then only the refunded positions). Needs a valid e-invoice on the order. A cancelled order and its refunded payment give one credit note. The credit note is attached to the cancellation / refund email (option). Download: `GET /api/_action/wsystem-einvoice/order/{id}/credit-notes`.
+
+Not yet: Peppol sending from the shop, partial refunds that Shopware records without positions and without tax data. Not tax or legal advice.
 
 ## Data sent to W System
 

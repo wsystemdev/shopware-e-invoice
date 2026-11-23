@@ -3,7 +3,7 @@
 Status: texts, screenshots and icon are ready. No Shopware Account / Extension Partner contract exists yet: both need Zifeng's OK (see "Needs approval").
 
 ## Master data
-- Extension name (technical): WSystemEInvoice (composer `wsystem/shopware-e-invoice`), version 1.0.1
+- Extension name (technical): WSystemEInvoice (composer `wsystem/shopware-e-invoice`), version 1.1.0
 - Store name EN: W System E-Invoice (XRechnung / EN 16931)
 - Store name DE: W System E-Rechnung (XRechnung / EN 16931)
 - Manufacturer: W System (https://wsystem.dev), support: hello@wsystem.dev, issues: https://github.com/wsystemdev/shopware-e-invoice/issues
@@ -39,7 +39,7 @@ W System E-Invoice builds the structured file from each Shopware order and check
 
 **External service and data:** the plugin needs the W System API (https://api.wsystem.dev, operated by W System). When an e-invoice is created, the invoice data of the order is sent there: your seller details from the settings, the customer's billing name, company, address, email and VAT ID, order and invoice number, dates, currency, line items, shipping, payment status and the buyer reference. Nothing is sent on installation, in the storefront or at checkout. Terms: https://wsystem.dev/terms, privacy: https://wsystem.dev/privacy. Without an API key the free tier allows 20 invoices per day per server IP; a free key (email only, no card) has 500 units a month (8 units per invoice, about 60 invoices); larger quotas are paid, see https://wsystem.dev/pricing. The plugin itself is free.
 
-Not included yet: CII files, ZUGFeRD/Factur-X PDF, credit notes for cancellations, Peppol sending from the shop. Not tax or legal advice.
+Optional (off by default): ZUGFeRD/Factur-X PDF and automatic credit notes for cancellations and refunds. Not included yet: Peppol sending from the shop. Not tax or legal advice.
 
 ## Long description DE
 **E-Rechnungen für Ihre Shopware-Bestellungen, bereit für die E-Rechnungspflicht.**
@@ -60,7 +60,7 @@ W System E-Rechnung erzeugt die strukturierte Datei aus jeder Shopware-Bestellun
 
 **Externer Dienst und Daten:** Das Plugin benötigt die W System API (https://api.wsystem.dev, betrieben von W System). Beim Erstellen einer E-Rechnung werden die Rechnungsdaten der Bestellung dorthin gesendet: Ihre Verkäuferdaten aus den Einstellungen, Name, Firma, Adresse, E-Mail und USt-IdNr. des Kunden, Bestell- und Rechnungsnummer, Daten, Währung, Positionen, Versand, Zahlungsstatus und die Käuferreferenz. Bei Installation, im Storefront und im Checkout wird nichts gesendet. Bedingungen: https://wsystem.dev/terms, Datenschutz: https://wsystem.dev/privacy. Ohne API-Schlüssel erlaubt die kostenlose Stufe 20 Rechnungen pro Tag und Server-IP; ein kostenloser Schlüssel (nur E-Mail, keine Karte) enthält 500 Einheiten im Monat (8 Einheiten pro Rechnung, etwa 60 Rechnungen); größere Kontingente sind kostenpflichtig, siehe https://wsystem.dev/de/preise. Das Plugin selbst ist kostenlos.
 
-Noch nicht enthalten: CII-Dateien, ZUGFeRD-/Factur-X-PDF, Gutschriften für Stornierungen, Peppol-Versand aus dem Shop. Keine Steuer- oder Rechtsberatung.
+Optional (standardmäßig aus): ZUGFeRD-/Factur-X-PDF und automatische Gutschriften bei Stornierung und Erstattung. Noch nicht enthalten: Peppol-Versand aus dem Shop. Keine Steuer- oder Rechtsberatung.
 
 ## Needs approval from Zifeng before submission (not done)
 1. Shopware Account sign-up and acceptance of the Extension Partner contract (account terms + Extension Partner contract; free to sign, no listing fee for free extensions per Shopware docs, but it is a contract).

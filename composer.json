@@ -3,7 +3,7 @@
     "description": "XRechnung 3.0 and EN 16931 e-invoices for Shopware 6 orders, validated through the W System API, downloadable from the order and attachable to order emails.",
     "type": "shopware-platform-plugin",
     "license": "GPL-3.0-or-later",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "keywords": [
         "shopware",
         "xrechnung",

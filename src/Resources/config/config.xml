@@ -78,6 +78,32 @@
         </input-field>
     </card>
     <card>
+        <title>ZUGFeRD and credit notes (new in 1.1)</title>
+        <title lang="de-DE">ZUGFeRD und Gutschriften (neu in 1.1)</title>
+        <input-field type="bool">
+            <name>zugferd</name>
+            <label>Create a ZUGFeRD / Factur-X PDF (EN 16931) instead of XML only</label>
+            <label lang="de-DE">ZUGFeRD / Factur-X PDF (EN 16931) statt nur XML erstellen</label>
+            <helpText>Off by default. The PDF contains the XML. Replaces the XML attachment in order emails with the PDF. Not used with the Peppol BIS format. Applies to e-invoices created from now on.</helpText>
+            <helpText lang="de-DE">Standardmäßig aus. Das PDF enthält die XML. Ersetzt in Bestell-E-Mails den XML-Anhang durch das PDF. Nicht mit dem Format Peppol BIS. Gilt für ab jetzt erstellte E-Rechnungen.</helpText>
+            <defaultValue>false</defaultValue>
+        </input-field>
+        <input-field type="bool">
+            <name>creditNotes</name>
+            <label>Create credit notes automatically (cancellation, refund)</label>
+            <label lang="de-DE">Gutschriften automatisch erstellen (Stornierung, Erstattung)</label>
+            <helpText>Off by default. Creates a credit note (type 381) that references the original e-invoice when an order is cancelled or a payment or part of it is refunded. Only for orders that already have a valid e-invoice.</helpText>
+            <helpText lang="de-DE">Standardmäßig aus. Erstellt bei Stornierung oder (Teil-)Erstattung eine Gutschrift (Typ 381), die auf die ursprüngliche E-Rechnung verweist. Nur für Bestellungen mit gültiger E-Rechnung.</helpText>
+            <defaultValue>false</defaultValue>
+        </input-field>
+        <input-field type="bool">
+            <name>attachCreditNote</name>
+            <label>Attach the credit note to the cancellation / refund email</label>
+            <label lang="de-DE">Gutschrift an die Stornierungs- / Erstattungs-E-Mail anhängen</label>
+            <defaultValue>true</defaultValue>
+        </input-field>
+    </card>
+    <card>
         <title>Your company (seller)</title>
         <title lang="de-DE">Ihr Unternehmen (Verkäufer)</title>
         <input-field>

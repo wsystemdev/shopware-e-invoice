@@ -257,6 +257,76 @@ final class OrderMapper
         return $line;
     }
 
+    /** VAT category used for zero-rated lines of this order (E small business, G export, AE EU reverse charge, else Z). */
+    public static function zeroCategory(OrderEntity $order, Settings $s): string
+    {
+        $sellerCountry = strtoupper($s->str('sellerCountry') ?: 'DE');
+        $buyerCountry = strtoupper((string) self::billingAddress($order)?->getCountry()?->getIso());
+        $buyerVat = self::buyerVat($order);
+        if ($s->bool('smallBusiness')) {
+            return 'E';
+        }
+        if ($buyerCountry !== '' && $buyerCountry !== $sellerCountry && !\in_array($buyerCountry, self::EU, true)) {
+            return 'G';
+        }
+        if ($buyerVat !== '' && $buyerCountry !== $sellerCountry && \in_array($buyerCountry, self::EU, true)) {
+            return 'AE';
+        }
+
+        return 'Z';
+    }
+
+    /** API format for new documents: the configured one, or zugferd when the option is on (not for Peppol BIS). */
+    public static function formatFor(Settings $s): string
+    {
+        $f = $s->str('format') ?: 'xrechnung';
+
+        return $s->bool('zugferd') && $f !== 'peppol-bis3' ? 'zugferd' : $f;
+    }
+
+    /**
+     * Credit note (type 381) for an order: all of it (when $refundLines is null) or only the given refunded lines.
+     * Amounts stay positive. References the original invoice (BT-25 / BT-26).
+     *
+     * @param list<array{label:string,qty:float,price:CalculatedPrice,sku?:string}>|null $refundLines
+     *
+     * @return array<string,mixed>
+     */
+    public static function creditNote(OrderEntity $order, Settings $s, string $key, string $precedingNumber, string $precedingDate, ?array $refundLines = null, ?\DateTimeInterface $today = null): array
+    {
+        $today ??= new \DateTimeImmutable();
+        $body = self::invoice($order, $s, null, $today);
+        if ($refundLines !== null) {
+            $taxStatus = $order->getPrice()->getTaxStatus();
+            $zero = self::zeroCategory($order, $s);
+            $raw = [];
+            $target = 0.0;
+            foreach ($refundLines as $r) {
+                $l = self::line($r['label'], $r['qty'], $r['price'], $taxStatus, $zero, $s->bool('smallBusiness'), $r['sku'] ?? '');
+                $target += $r['price']->getTotalPrice() + ($taxStatus === CartPrice::TAX_STATE_GROSS ? 0.0 : $r['price']->getCalculatedTaxes()->getAmount());
+                if ($l !== null) {
+                    $raw[] = $l;
+                }
+            }
+            $body['lines'] = array_map([self::class, 'finish'], self::reconcile($raw, $target));
+        }
+        unset($body['prepaid_amount']);
+        $base = (string) $order->getOrderNumber();
+        $body['invoice_number'] = 'CN-' . $base . '-' . substr(preg_replace('/[^A-Za-z0-9]/', '', $key) ?: '1', -8);
+        $body['type_code'] = '381';
+        $body['preceding_invoice'] = $precedingNumber;
+        $body['preceding_invoice_date'] = $precedingDate;
+        $body['issue_date'] = $today->format('Y-m-d');
+        $body['delivery_date'] = $today->format('Y-m-d');
+        $iban = (string) preg_replace('/\s/', '', $s->str('sellerIban'));
+        $terms = 'Refund to the original payment method';
+        $body['payment'] = $iban !== ''
+            ? ['means_code' => '58', 'iban' => $iban, 'account_name' => $s->str('sellerName'), 'reference' => $body['invoice_number'], 'terms' => $terms]
+            : ['means_code' => '1', 'reference' => $body['invoice_number'], 'terms' => $terms];
+
+        return $body;
+    }
+
     /**
      * @return array<string,mixed>
      */
@@ -270,14 +340,7 @@ final class OrderMapper
         $small = $s->bool('smallBusiness');
         $taxStatus = $order->getPrice()->getTaxStatus();
 
-        $zero = 'Z';
-        if ($small) {
-            $zero = 'E';
-        } elseif ($buyerCountry !== '' && $buyerCountry !== $sellerCountry && !\in_array($buyerCountry, self::EU, true)) {
-            $zero = 'G';
-        } elseif ($buyerVat !== '' && $buyerCountry !== $sellerCountry && \in_array($buyerCountry, self::EU, true)) {
-            $zero = 'AE';
-        }
+        $zero = self::zeroCategory($order, $s);
 
         $raw = [];
         foreach ($order->getLineItems() ?? [] as $item) {
@@ -377,7 +440,7 @@ final class OrderMapper
         }
 
         $body = [
-            'format' => $format ?: ($s->str('format') ?: 'xrechnung'),
+            'format' => $format ?: self::formatFor($s),
             'invoice_number' => $number,
             'issue_date' => $today->format('Y-m-d'),
             'delivery_date' => $order->getOrderDateTime()->format('Y-m-d'),

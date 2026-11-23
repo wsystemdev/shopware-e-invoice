@@ -18,6 +18,12 @@
             <argument type="service" id="order_transaction.repository"/>
             <tag name="kernel.event_subscriber"/>
         </service>
+        <service id="WSystem\EInvoice\Subscriber\CreditNoteSubscriber">
+            <argument type="service" id="WSystem\EInvoice\Service\InvoiceService"/>
+            <argument type="service" id="order_transaction.repository"/>
+            <argument type="service" id="order_transaction_capture_refund.repository" on-invalid="null"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
         <service id="WSystem\EInvoice\Subscriber\MailAttachSubscriber">
             <argument type="service" id="WSystem\EInvoice\Service\InvoiceService"/>
             <tag name="kernel.event_subscriber"/>

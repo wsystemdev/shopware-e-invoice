@@ -51,4 +51,30 @@ final class MailAttachTest extends TestCase
         self::assertArrayNotHasKey('binAttachments', $this->fire($ok, 'state_enter.order_delivery.state.shipped'));
         self::assertArrayNotHasKey('binAttachments', $this->fire($ok, 'checkout.order.placed', ['attachEmail' => false]));
     }
+
+    public function testPdfReplacesXmlWhenAZugferdPdfExists(): void
+    {
+        $o = $this->order([InvoiceService::F_XML => '<Invoice/>', InvoiceService::F_VALID => 'yes', InvoiceService::F_NUMBER => '10001', InvoiceService::F_PDF => base64_encode('%PDF-1.7 x')]);
+        $d = $this->fire($o, 'checkout.order.placed');
+        self::assertCount(1, $d['binAttachments']);
+        self::assertSame('%PDF-1.7 x', $d['binAttachments'][0]['content']);
+        self::assertSame('e-invoice-10001.pdf', $d['binAttachments'][0]['fileName']);
+        self::assertSame('application/pdf', $d['binAttachments'][0]['mimeType']);
+    }
+
+    public function testCreditNoteAttachedToCancellationMailOnlyWhenEnabled(): void
+    {
+        $cn = [['key' => 'k', 'number' => 'CN-10001-1', 'valid' => true, 'xml' => '<CreditNote/>', 'pdf' => base64_encode('%PDF cn')]];
+        $o = $this->order([InvoiceService::F_XML => '<Invoice/>', InvoiceService::F_VALID => 'yes', InvoiceService::F_CREDIT_NOTES => $cn]);
+        // default: credit notes off -> nothing attached to a cancellation mail
+        self::assertArrayNotHasKey('binAttachments', $this->fire($o, 'state_enter.order.state.cancelled'));
+        $d = $this->fire($o, 'state_enter.order.state.cancelled', ['creditNotes' => true]);
+        self::assertCount(1, $d['binAttachments']);
+        self::assertSame('credit-note-CN-10001-1.pdf', $d['binAttachments'][0]['fileName']);
+        self::assertSame('%PDF cn', $d['binAttachments'][0]['content']);
+        $x = $this->order([InvoiceService::F_CREDIT_NOTES => [['key' => 'k', 'number' => 'CN-2', 'valid' => true, 'xml' => '<CreditNote/>']]]);
+        $d = $this->fire($x, 'state_enter.order_transaction.state.refunded', ['creditNotes' => true]);
+        self::assertSame('application/xml', $d['binAttachments'][0]['mimeType']);
+        self::assertArrayNotHasKey('binAttachments', $this->fire($o, 'state_enter.order.state.cancelled', ['creditNotes' => true, 'attachCreditNote' => false]));
+    }
 }

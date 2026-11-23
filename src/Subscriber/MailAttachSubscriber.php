@@ -13,6 +13,12 @@ use WSystem\EInvoice\Service\Settings;
  */
 class MailAttachSubscriber implements EventSubscriberInterface
 {
+    private const CREDIT_NOTE_EVENTS = [
+        'state_enter.order.state.cancelled',
+        'state_enter.order_transaction.state.refunded',
+        'state_enter.order_transaction.state.refunded_partially',
+    ];
+
     public function __construct(private readonly InvoiceService $invoices)
     {
     }
@@ -32,18 +38,34 @@ class MailAttachSubscriber implements EventSubscriberInterface
         $eventName = (string) ($tpl['eventName'] ?? '');
         try {
             $settings = $this->invoices->settingsFor($order);
-            if (!$settings->bool('attachEmail') || !$this->matches($settings, $eventName)) {
+            $creditMail = \in_array($eventName, self::CREDIT_NOTE_EVENTS, true) && $settings->bool('creditNotes') && $settings->bool('attachCreditNote');
+            $invoiceMail = $settings->bool('attachEmail') && $this->matches($settings, $eventName);
+            if (!$creditMail && !$invoiceMail) {
                 return;
             }
             $fresh = $this->invoices->loadOrder($order->getId(), $event->getContext()) ?? $order;
-            $status = InvoiceService::status($fresh);
-            if (!$status['exists'] || !$status['valid']) {
-                return;
-            }
             $data = $event->getData();
             $att = $data['binAttachments'] ?? [];
-            $att[] = ['content' => InvoiceService::xml($fresh), 'fileName' => InvoiceService::fileName($fresh), 'mimeType' => 'application/xml'];
-            $event->addData('binAttachments', $att);
+            $status = InvoiceService::status($fresh);
+            if ($invoiceMail && $status['exists'] && $status['valid']) {
+                $pdf = InvoiceService::pdf($fresh);
+                $att[] = $pdf !== ''
+                    ? ['content' => base64_decode($pdf, true) ?: '', 'fileName' => InvoiceService::pdfFileName($fresh), 'mimeType' => 'application/pdf']
+                    : ['content' => InvoiceService::xml($fresh), 'fileName' => InvoiceService::fileName($fresh), 'mimeType' => 'application/xml'];
+            }
+            if ($creditMail) {
+                foreach (InvoiceService::creditNotes($fresh) as $cn) {
+                    if (empty($cn['valid']) || ($cn['xml'] ?? '') === '') {
+                        continue;
+                    }
+                    $att[] = !empty($cn['pdf'])
+                        ? ['content' => base64_decode((string) $cn['pdf'], true) ?: '', 'fileName' => InvoiceService::creditNoteFileName($cn, 'pdf'), 'mimeType' => 'application/pdf']
+                        : ['content' => (string) $cn['xml'], 'fileName' => InvoiceService::creditNoteFileName($cn, 'xml'), 'mimeType' => 'application/xml'];
+                }
+            }
+            if ($att !== ($data['binAttachments'] ?? [])) {
+                $event->addData('binAttachments', $att);
+            }
         } catch (\Throwable $e) {
             // never block the email
         }
