@@ -4,6 +4,7 @@ Shopware 6 plugin that creates **XRechnung 3.0** and **EN 16931** e-invoices (UB
 
 * Landing page and guide: https://wsystem.dev/shopware-xrechnung (German: https://wsystem.dev/de/shopware-xrechnung)
 * Works with Shopware 6.5, 6.6 and 6.7 (self-hosted and PaaS shops that can install plugins). Tested end to end on 6.6.
+* Free for 50 invoices a month, then from €12 (shop plans: https://wsystem.dev/online-shops).
 * Free tier: 20 API calls per day per server IP, no key. Free API key: https://api.wsystem.dev/account/free-key?ref=shopware-einvoice
 * All features are free in the plugin. There are no locked features and no licence check.
 
