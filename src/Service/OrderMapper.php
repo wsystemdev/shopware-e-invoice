@@ -175,7 +175,7 @@ final class OrderMapper
      *
      * @return list<array<string,mixed>>
      */
-    private static function reconcile(array $raw, float $target): array
+    private static function rateGroups(array $raw): array
     {
         $groups = [];
         foreach ($raw as $i => $l) {
@@ -183,7 +183,14 @@ final class OrderMapper
                 $groups[(string) $l['rate']][] = $i;
             }
         }
-        foreach ($groups as $rate => $idx) {
+
+        return $groups;
+    }
+
+    /** Per-rate: if a net within 3 cents reaches the shop gross at base x rate, shift that rate's last line. */
+    private static function firstPass(array $raw): array
+    {
+        foreach (self::rateGroups($raw) as $rate => $idx) {
             $grossSum = 0.0;
             $netSum = 0.0;
             foreach ($idx as $i) {
@@ -209,22 +216,100 @@ final class OrderMapper
             }
         }
 
-        // Second pass: some gross amounts cannot be reached by one rate alone; make the total match by shifting
-        // the last line of one rate by 1 or 2 cents.
-        if (abs(self::total($raw) - round($target, 2)) > 0.001) {
-            foreach ([1, -1, 2, -2] as $d) {
-                foreach ($groups as $idx) {
-                    $last = end($idx);
-                    $try = $raw;
-                    $try[$last]['net'] = round($try[$last]['net'] + $d / 100, 2);
-                    if (abs(self::total($try) - round($target, 2)) < 0.001) {
-                        return $try;
-                    }
+        return $raw;
+    }
+
+    /** Cross-rate 1-2 cent shift so today's API (base x rate, no vat_amounts) still matches the order total. */
+    private static function secondPass(array $raw, float $target): array
+    {
+        if (abs(self::total($raw) - round($target, 2)) <= 0.001) {
+            return $raw;
+        }
+        foreach ([1, -1, 2, -2] as $d) {
+            foreach (self::rateGroups($raw) as $idx) {
+                $last = end($idx);
+                $try = $raw;
+                $try[$last]['net'] = round($try[$last]['net'] + $d / 100, 2);
+                if (abs(self::total($try) - round($target, 2)) < 0.001) {
+                    return $try;
                 }
             }
         }
 
         return $raw;
+    }
+
+    /**
+     * Total the API will compute when it honours vat_amounts (shop VAT per rate wherever sent).
+     *
+     * @param list<array<string,mixed>> $raw
+     * @param list<array{vat_category:string,vat_rate:float,tax_amount:float}> $va
+     */
+    private static function totalWithVat(array $raw, array $va): float
+    {
+        $ov = [];
+        foreach ($va as $v) {
+            $ov[(string) $v['vat_rate']] = $v['tax_amount'];
+        }
+        $by = [];
+        foreach ($raw as $l) {
+            $k = $l['cat'] . '|' . $l['rate'];
+            $by[$k] = ($by[$k] ?? 0.0) + $l['net'];
+        }
+        $t = 0.0;
+        foreach ($by as $k => $net) {
+            $net = round($net, 2);
+            [$cat, $rateS] = explode('|', $k, 2);
+            $rate = (float) $rateS;
+            if ($cat === 'S' && array_key_exists((string) $rate, $ov)) {
+                $tax = $ov[(string) $rate];
+            } elseif ($cat === 'S') {
+                $tax = round($net * $rate / 100, 2);
+            } else {
+                $tax = 0.0;
+            }
+            $t += $net + $tax;
+        }
+
+        return round($t, 2);
+    }
+
+    /**
+     * First pass + optional second pass, then pick nets and vat_amounts so an API that honours vat_amounts
+     * matches the order total (PC-10: vat_amounts must not be derived from a second-pass-shifted net in a
+     * way that double-corrects). Prefer a pair that also matches without vat_amounts (PC-4).
+     *
+     * @param list<array<string,mixed>> $raw
+     *
+     * @return array{0:list<array<string,mixed>>,1:list<array{vat_category:string,vat_rate:float,tax_amount:float}>}
+     */
+    private static function reconcileChoose(array $raw, float $target): array
+    {
+        $target = round($target, 2);
+        $first = self::firstPass($raw);
+        $second = self::secondPass($first, $target);
+        $candidates = [
+            [$second, self::vatAmounts($second)],
+            [$second, self::vatAmounts($first)],
+            [$first, self::vatAmounts($first)],
+            [$second, []],
+            [$first, []],
+        ];
+        $best = [$second, self::vatAmounts($second)];
+        $bestScore = -1;
+        foreach ($candidates as [$cand, $va]) {
+            if (abs(self::totalWithVat($cand, $va) - $target) >= 0.001) {
+                continue;
+            }
+            $oldOk = abs(self::total($cand) - $target) < 0.001;
+            $score = 4 + ($oldOk ? 2 : 0) + ($va !== [] ? 1 : 0);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = [$cand, $va];
+            }
+        }
+
+        return $best;
     }
 
     /**
@@ -371,10 +456,9 @@ final class OrderMapper
                 array_push($raw, ...self::lines($r['label'], $r['qty'], $r['price'], $taxStatus, $zero, $s->bool('smallBusiness'), $r['sku'] ?? ''));
                 $target += $r['price']->getTotalPrice() + ($taxStatus === CartPrice::TAX_STATE_GROSS ? 0.0 : $r['price']->getCalculatedTaxes()->getAmount());
             }
-            $raw = self::reconcile($raw, $target);
+            [$raw, $va] = self::reconcileChoose($raw, $target);
             $body['lines'] = array_map([self::class, 'finish'], $raw);
             unset($body['vat_amounts']);
-            $va = self::vatAmounts($raw);
             if ($va !== []) {
                 $body['vat_amounts'] = $va;
             }
@@ -421,9 +505,8 @@ final class OrderMapper
             array_push($raw, ...self::lines((string) $item->getLabel(), (float) $item->getQuantity(), $item->getPrice() ?? new CalculatedPrice(0, 0, new CalculatedTaxCollection(), new TaxRuleCollection()), $taxStatus, $zero, $small, $sku));
         }
         array_push($raw, ...self::lines('Shipping', 1, $order->getShippingCosts(), $taxStatus, $zero, $small));
-        $raw = self::reconcile($raw, $order->getAmountTotal());
+        [$raw, $vatAmounts] = self::reconcileChoose($raw, $order->getAmountTotal());
         $lines = array_map([self::class, 'finish'], $raw);
-        $vatAmounts = self::vatAmounts($raw);
 
         $company = trim((string) $addr?->getCompany());
         $name = trim((string) $addr?->getFirstName() . ' ' . (string) $addr?->getLastName());

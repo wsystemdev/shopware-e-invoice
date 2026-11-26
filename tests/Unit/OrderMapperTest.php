@@ -213,6 +213,29 @@ final class OrderMapperTest extends TestCase
         self::assertEqualsWithDelta(0.40, self::apiTotal($b), 0.001);
     }
 
+    public function testPc10VatAmountsDoNotDoubleCorrectASecondPassShift(): void
+    {
+        // Mixed 19 % + 7 % plus a fixed coupon: the second pass already makes base x rate equal the order
+        // total, but vat_amounts computed from the shifted 7 % net would double-correct by 1 cent (PC-10).
+        $o = $this->order();
+        $o->setAmountTotal(710.96);
+        $o->setLineItems(new OrderLineItemCollection([
+            $this->item('l0', 'Artikel 70-0', 3, $this->price(37.50, 7, 2.45, 3)),
+            $this->item('l1', 'Artikel 70-1', 3, $this->price(5.25, 0, 0.0, 3)),
+            $this->item('l2', 'Artikel 70-2', 3, $this->price(23.97, 19, 3.83, 3)),
+            $this->item('l3', 'Artikel 70-3', 7, $this->price(629.30, 0, 0.0, 7)),
+            $this->item('l4', 'Artikel 70-4', 1, $this->price(7.49, 19, 1.20)),
+            $this->item('l5', 'Artikel 70-5', 5, $this->price(4.50, 0, 0.0, 5)),
+            $this->item('p', 'Gutschein F5', 1, $this->multi(-2.00, [[-0.11, 7, -0.01], [-1.81, 0, 0.0], [-0.08, 19, -0.01]])),
+        ]));
+        $o->setShippingCosts($this->price(4.95, 19, 0.79));
+        $b = OrderMapper::invoice($o, $this->settings());
+        self::assertEqualsWithDelta(710.96, self::apiTotal($b), 0.001);
+        $without = $b;
+        unset($without['vat_amounts']);
+        self::assertEqualsWithDelta(710.96, self::apiTotal($without), 0.001, 'PC-4: also matches when vat_amounts is ignored');
+    }
+
     public function testNoVatAmountsWhenReconcileReachesTheTotal(): void
     {
         $o = $this->order();
