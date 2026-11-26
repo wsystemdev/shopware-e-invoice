@@ -253,7 +253,7 @@ final class OrderMapper
      * VAT the shop actually charged per rate (gross prices: rate gross minus rate net; net prices: the summed line taxes), sent as
      * vat_amounts so the e-invoice total equals the order total even where no net amount can reach it (e.g. 9.99 gross at 19 %).
      * Only groups whose amount differs from base x rate, and only within the API's per-line rounding bound (0.005 per line, at
-     * least 0.01); otherwise nothing is sent and the API computes VAT as before. APIs before 0.3.162 ignore the field.
+     * least 0.01); otherwise nothing is sent and the API computes VAT as before. API versions without vat_amounts support ignore the field.
      *
      * @param list<array<string,mixed>> $raw
      *

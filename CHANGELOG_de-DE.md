@@ -1,6 +1,6 @@
 # 1.1.1
 - Fehlerbehebung: Versandkosten mit Steuerart „Auto“ und prozentuale Rabatte in Warenkörben mit mehreren Steuersätzen werden jetzt je Steuersatz aufgeteilt (bisher landeten sie komplett bei einem Satz, sodass USt-Aufschlüsselung und Summe von der Bestellung abwichen).
-- Bruttopreise: Die Summe der E-Rechnung entspricht jetzt der Bestellsumme. Wo die zeilenweise USt-Rundung von Shopware mit keinem Nettobetrag erreichbar ist (z. B. ein Artikel zu 9,99 € inkl. 19 % USt), wird die von Shopware berechnete USt je Satz als `vat_amounts` übergeben (berücksichtigt von der W-System-API ab Version 0.3.162; ältere API-Versionen ignorieren das Feld wie bisher).
+- Bruttopreise: Die Summe der E-Rechnung entspricht jetzt der Bestellsumme. Wo die zeilenweise USt-Rundung von Shopware mit keinem Nettobetrag erreichbar ist (z. B. ein Artikel zu 9,99 € inkl. 19 % USt), wird die von Shopware berechnete USt je Satz als `vat_amounts` übergeben (von der W-System-API berücksichtigt, sobald die Unterstützung live ist; bis dahin ignoriert die API das Feld wie bisher).
 
 # 1.1.0
 - Neu (beide Optionen sind standardmäßig AUS, bestehende Shops verhalten sich unverändert): ZUGFeRD / Factur-X PDF (EN 16931, PDF/A-3b mit eingebetteter XML) statt nur XML sowie automatische Gutschriften (Typ 381, mit Verweis auf die ursprüngliche E-Rechnung) bei stornierten Bestellungen, erstatteten Zahlungen und Shopware-Erstattungen (erstattete Positionen).
