@@ -272,7 +272,7 @@ final class OrderMapper
             $g[$k]['gross'] += $l['gross'] ?? 0.0;
             $g[$k]['tax'] += $l['tax'] ?? 0.0;
         }
-        $tol = max(0.01, round(0.005 * \count($raw), 2));
+        $tol = min(0.99, max(0.01, round(0.005 * \count($raw), 2)));
         $out = [];
         foreach ($g as $rate => $v) {
             $net = round($v['net'], 2);

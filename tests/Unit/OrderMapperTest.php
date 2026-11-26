@@ -197,6 +197,22 @@ final class OrderMapperTest extends TestCase
         self::assertEqualsWithDelta(9.99, self::apiTotal($b), 0.001);
     }
 
+    public function testCentLinesSendShopVatWithinLineBound(): void
+    {
+        // PC-5: 40 x 0.01 gross at 19 % -> Shopware charges 0.00 VAT per line; base x rate would add 0.06-0.08. The shop VAT goes out as
+        // vat_amounts (|diff| <= 0.005 x 40 lines), so the e-invoice shows exactly what the shop charged.
+        $o = $this->order();
+        $o->setAmountTotal(0.40);
+        $items = [];
+        for ($i = 0; $i < 40; ++$i) {
+            $items[] = $this->item('c' . $i, 'Schraube ' . $i, 1, new CalculatedPrice(0.01, 0.01, new CalculatedTaxCollection([new CalculatedTax(0.0, 19, 0.01)]), new TaxRuleCollection()));
+        }
+        $o->setLineItems(new OrderLineItemCollection($items));
+        $b = OrderMapper::invoice($o, $this->settings());
+        self::assertSame([['vat_category' => 'S', 'vat_rate' => 19.0, 'tax_amount' => 0.0]], $b['vat_amounts']);
+        self::assertEqualsWithDelta(0.40, self::apiTotal($b), 0.001);
+    }
+
     public function testNoVatAmountsWhenReconcileReachesTheTotal(): void
     {
         $o = $this->order();
