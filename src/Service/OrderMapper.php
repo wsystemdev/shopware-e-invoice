@@ -4,6 +4,7 @@ namespace WSystem\EInvoice\Service;
 
 use Shopware\Core\Checkout\Cart\Price\Struct\CalculatedPrice;
 use Shopware\Core\Checkout\Cart\Price\Struct\CartPrice;
+use Shopware\Core\Checkout\Cart\Tax\Struct\CalculatedTax;
 use Shopware\Core\Checkout\Cart\Tax\Struct\CalculatedTaxCollection;
 use Shopware\Core\Checkout\Cart\Tax\Struct\TaxRuleCollection;
 use Shopware\Core\Checkout\Order\Aggregate\OrderAddress\OrderAddressEntity;
@@ -119,6 +120,34 @@ final class OrderMapper
     }
 
     /**
+     * Raw lines for one Shopware price. A price carrying several calculated taxes (shipping with tax type "auto", percentage
+     * promotions, mixed-rate bundles) is split into one raw line per tax rate, so every amount lands at its own VAT rate.
+     *
+     * @return list<array<string,mixed>> empty for zero-value prices (raw lines, finished by finish())
+     */
+    private static function lines(string $desc, float $qty, CalculatedPrice $price, string $taxStatus, string $zero, bool $small, string $sku = ''): array
+    {
+        $taxes = $price->getCalculatedTaxes();
+        if (\count($taxes) <= 1 || $small || $taxStatus === CartPrice::TAX_STATE_FREE) {
+            $l = self::line($desc, $qty, $price, $taxStatus, $zero, $small, $sku);
+
+            return $l !== null ? [$l] : [];
+        }
+        $gross = $taxStatus === CartPrice::TAX_STATE_GROSS;
+        $out = [];
+        foreach ($taxes as $t) {
+            $part = $gross ? $t->getPrice() : $t->getPrice() + $t->getTax();
+            $sub = new CalculatedPrice($t->getPrice(), $t->getPrice(), new CalculatedTaxCollection([new CalculatedTax($t->getTax(), $t->getTaxRate(), $t->getPrice())]), new TaxRuleCollection());
+            $l = self::line($desc . ' (' . rtrim(rtrim(number_format($t->getTaxRate(), 2, '.', ''), '0'), '.') . ' %)', 1, $sub, $taxStatus, $zero, $small, $sku);
+            if ($l !== null && abs($part) > 0.0) {
+                $out[] = $l;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * @return array<string,mixed>|null null for zero-value lines (raw line, finished by finish())
      */
     private static function line(string $desc, float $qty, CalculatedPrice $price, string $taxStatus, string $zero, bool $small, string $sku = ''): ?array
@@ -135,7 +164,7 @@ final class OrderMapper
             [$cat, $rate] = ['E', 0.0];
         }
 
-        return ['desc' => $desc, 'qty' => $qty, 'net' => $net, 'gross' => $gross ? round($total, 2) : null, 'cat' => $cat, 'rate' => $rate, 'sku' => $sku];
+        return ['desc' => $desc, 'qty' => $qty, 'net' => $net, 'gross' => $gross ? round($total, 2) : null, 'tax' => round($tax, 2), 'cat' => $cat, 'rate' => $rate, 'sku' => $sku];
     }
 
     /**
@@ -221,6 +250,43 @@ final class OrderMapper
     }
 
     /**
+     * VAT the shop actually charged per rate (gross prices: rate gross minus rate net; net prices: the summed line taxes), sent as
+     * vat_amounts so the e-invoice total equals the order total even where no net amount can reach it (e.g. 9.99 gross at 19 %).
+     * Only groups whose amount differs from base x rate, and only within the API's per-line rounding bound (0.005 per line, at
+     * least 0.01); otherwise nothing is sent and the API computes VAT as before. APIs before 0.3.162 ignore the field.
+     *
+     * @param list<array<string,mixed>> $raw
+     *
+     * @return list<array{vat_category:string,vat_rate:float,tax_amount:float}>
+     */
+    public static function vatAmounts(array $raw): array
+    {
+        $g = [];
+        foreach ($raw as $l) {
+            if ($l['cat'] !== 'S') {
+                continue;
+            }
+            $k = (string) $l['rate'];
+            $g[$k] ??= ['net' => 0.0, 'gross' => 0.0, 'tax' => 0.0, 'grossMode' => $l['gross'] !== null];
+            $g[$k]['net'] += $l['net'];
+            $g[$k]['gross'] += $l['gross'] ?? 0.0;
+            $g[$k]['tax'] += $l['tax'] ?? 0.0;
+        }
+        $tol = max(0.01, round(0.005 * \count($raw), 2));
+        $out = [];
+        foreach ($g as $rate => $v) {
+            $net = round($v['net'], 2);
+            $charged = round($v['grossMode'] ? round($v['gross'], 2) - $net : $v['tax'], 2);
+            $calc = round($net * (float) $rate / 100, 2);
+            if (abs($charged - $calc) > 0.001 && abs($charged - $calc) <= $tol + 0.0001) {
+                $out[] = ['vat_category' => 'S', 'vat_rate' => (float) $rate, 'tax_amount' => $charged];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * @param array<string,mixed> $l raw line
      *
      * @return array<string,mixed>
@@ -302,13 +368,16 @@ final class OrderMapper
             $raw = [];
             $target = 0.0;
             foreach ($refundLines as $r) {
-                $l = self::line($r['label'], $r['qty'], $r['price'], $taxStatus, $zero, $s->bool('smallBusiness'), $r['sku'] ?? '');
+                array_push($raw, ...self::lines($r['label'], $r['qty'], $r['price'], $taxStatus, $zero, $s->bool('smallBusiness'), $r['sku'] ?? ''));
                 $target += $r['price']->getTotalPrice() + ($taxStatus === CartPrice::TAX_STATE_GROSS ? 0.0 : $r['price']->getCalculatedTaxes()->getAmount());
-                if ($l !== null) {
-                    $raw[] = $l;
-                }
             }
-            $body['lines'] = array_map([self::class, 'finish'], self::reconcile($raw, $target));
+            $raw = self::reconcile($raw, $target);
+            $body['lines'] = array_map([self::class, 'finish'], $raw);
+            unset($body['vat_amounts']);
+            $va = self::vatAmounts($raw);
+            if ($va !== []) {
+                $body['vat_amounts'] = $va;
+            }
         }
         unset($body['prepaid_amount']);
         $base = (string) $order->getOrderNumber();
@@ -349,17 +418,12 @@ final class OrderMapper
             }
             $payload = $item->getPayload() ?? [];
             $sku = (string) ($payload['productNumber'] ?? '');
-            $l = self::line((string) $item->getLabel(), (float) $item->getQuantity(), $item->getPrice() ?? new CalculatedPrice(0, 0, new CalculatedTaxCollection(), new TaxRuleCollection()), $taxStatus, $zero, $small, $sku);
-            if ($l !== null) {
-                $raw[] = $l;
-            }
+            array_push($raw, ...self::lines((string) $item->getLabel(), (float) $item->getQuantity(), $item->getPrice() ?? new CalculatedPrice(0, 0, new CalculatedTaxCollection(), new TaxRuleCollection()), $taxStatus, $zero, $small, $sku));
         }
-        $ship = $order->getShippingCosts();
-        $l = self::line('Shipping', 1, $ship, $taxStatus, $zero, $small);
-        if ($l !== null) {
-            $raw[] = $l;
-        }
-        $lines = array_map([self::class, 'finish'], self::reconcile($raw, $order->getAmountTotal()));
+        array_push($raw, ...self::lines('Shipping', 1, $order->getShippingCosts(), $taxStatus, $zero, $small));
+        $raw = self::reconcile($raw, $order->getAmountTotal());
+        $lines = array_map([self::class, 'finish'], $raw);
+        $vatAmounts = self::vatAmounts($raw);
 
         $company = trim((string) $addr?->getCompany());
         $name = trim((string) $addr?->getFirstName() . ' ' . (string) $addr?->getLastName());
@@ -452,6 +516,9 @@ final class OrderMapper
             'lines' => $lines,
             'payment' => $payment,
         ];
+        if ($vatAmounts !== []) {
+            $body['vat_amounts'] = $vatAmounts;
+        }
         if ($paid) {
             $body['prepaid_amount'] = round($order->getAmountTotal(), 2);
         }

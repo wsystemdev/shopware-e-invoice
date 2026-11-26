@@ -1,3 +1,7 @@
+# 1.1.1
+- Fix: shipping costs with tax type "auto" and percentage promotions in mixed-rate carts are now split per VAT rate (they were put entirely at one rate, so the VAT breakdown and the total differed from the order).
+- Gross prices: the e-invoice total now equals the order total. Where Shopware's per-line VAT rounding cannot be reached by any net amount (e.g. one item at 9.99 incl. 19 % VAT), the VAT Shopware charged per rate is sent as `vat_amounts` (taken into account by the W System API from version 0.3.162; earlier API versions ignore it and behave as before).
+
 # 1.1.0
 - New (both options are OFF by default, so existing shops behave exactly as before): ZUGFeRD / Factur-X PDF (EN 16931, PDF/A-3b with the XML embedded) instead of XML only, and automatic credit notes (type 381, referencing the original e-invoice) for cancelled orders, refunded payments and Shopware refunds (refunded positions).
 - Order emails carry the ZUGFeRD PDF instead of the XML when it exists; the credit note is attached to the cancellation / refund email (option).

@@ -122,6 +122,94 @@ final class OrderMapperTest extends TestCase
         self::assertEqualsWithDelta(109.87, $tot, 0.001);
     }
 
+    private function multi(float $total, array $parts): CalculatedPrice
+    {
+        $t = [];
+        foreach ($parts as [$price, $rate, $tax]) {
+            $t[] = new CalculatedTax($tax, $rate, $price);
+        }
+
+        return new CalculatedPrice($total, $total, new CalculatedTaxCollection($t), new TaxRuleCollection());
+    }
+
+    /** @param array<string,mixed> $b */
+    private static function apiTotal(array $b): float
+    {
+        $by = [];
+        foreach ($b['lines'] as $l) {
+            $by[(string) $l['vat_rate']] = ($by[(string) $l['vat_rate']] ?? 0) + round($l['quantity'] * $l['unit_price'], 2);
+        }
+        $over = [];
+        foreach ($b['vat_amounts'] ?? [] as $v) {
+            $over[(string) $v['vat_rate']] = $v['tax_amount'];
+        }
+        $tot = 0;
+        foreach ($by as $r => $n) {
+            $n = round($n, 2);
+            $tot += $n + ($over[$r] ?? round($n * (float) $r / 100, 2));
+        }
+
+        return round($tot, 2);
+    }
+
+    public function testShippingWithTwoTaxRatesIsSplitPerRate(): void
+    {
+        // BET3: Shopware tax type "auto" splits shipping 4.90 gross over 19 % and 7 %; it used to be put entirely at the larger share's rate
+        $o = $this->order();
+        $o->setAmountTotal(65.76);
+        $o->setLineItems(new OrderLineItemCollection([
+            $this->item('l1', 'Kugelschreiber', 3, $this->price(29.97, 19, 4.79, 3)),
+            $this->item('l2', 'Fachbuch', 2, $this->price(25.90, 7, 1.69, 2)),
+            $this->item('l3', 'Kaffee', 1, $this->price(4.99, 7, 0.33)),
+        ]));
+        $o->setShippingCosts($this->multi(4.90, [[2.42, 19, 0.39], [2.48, 7, 0.16]]));
+        $b = OrderMapper::invoice($o, $this->settings());
+        $ship = array_values(array_filter($b['lines'], static fn ($l) => str_starts_with($l['description'], 'Shipping')));
+        self::assertCount(2, $ship);
+        self::assertSame([19.0, 7.0], [$ship[0]['vat_rate'], $ship[1]['vat_rate']]);
+        self::assertEqualsWithDelta(65.76, self::apiTotal($b), 0.001);
+    }
+
+    public function testPercentagePromotionIsSplitPerRate(): void
+    {
+        $o = $this->order();
+        $o->setAmountTotal(54.77);
+        $o->setLineItems(new OrderLineItemCollection([
+            $this->item('l1', 'Kugelschreiber', 3, $this->price(29.97, 19, 4.79, 3)),
+            $this->item('l2', 'Fachbuch', 2, $this->price(25.90, 7, 1.69, 2)),
+            $this->item('l3', 'Kaffee', 1, $this->price(4.99, 7, 0.33)),
+            $this->item('p', '10 % Rabatt', 1, $this->multi(-6.09, [[-3.00, 19, -0.48], [-3.09, 7, -0.20]])),
+        ]));
+        $b = OrderMapper::invoice($o, $this->settings());
+        $promo = array_values(array_filter($b['lines'], static fn ($l) => str_starts_with($l['description'], '10 % Rabatt')));
+        self::assertCount(2, $promo);
+        self::assertEqualsWithDelta(54.77, self::apiTotal($b), 0.001);
+    }
+
+    public function testUnreachableGrossSendsShopVatAmount(): void
+    {
+        // 9.99 gross at 19 %: no net gives 9.99 with VAT = round(net x 19 %); the shop charged 1.60 VAT on 8.39 -> vat_amounts
+        $o = $this->order();
+        $o->setAmountTotal(9.99);
+        $o->setLineItems(new OrderLineItemCollection([$this->item('l1', 'Kugelschreiber', 1, $this->price(9.99, 19, 1.60))]));
+        $b = OrderMapper::invoice($o, $this->settings());
+        self::assertSame([['vat_category' => 'S', 'vat_rate' => 19.0, 'tax_amount' => 1.6]], $b['vat_amounts']);
+        self::assertEqualsWithDelta(9.99, self::apiTotal($b), 0.001);
+    }
+
+    public function testNoVatAmountsWhenReconcileReachesTheTotal(): void
+    {
+        $o = $this->order();
+        $o->setAmountTotal(140.40);
+        $o->setLineItems(new OrderLineItemCollection([
+            $this->item('l1', 'Widget', 1, $this->price(119.00, 19, 19.00)),
+            $this->item('l2', 'Book', 2, $this->price(21.40, 7, 1.40, 2)),
+        ]));
+        $b = OrderMapper::invoice($o, $this->settings());
+        self::assertArrayNotHasKey('vat_amounts', $b);
+        self::assertEqualsWithDelta(140.40, self::apiTotal($b), 0.001);
+    }
+
     public function testChildrenAreSkippedAndZeroLinesDropped(): void
     {
         $o = $this->order();
