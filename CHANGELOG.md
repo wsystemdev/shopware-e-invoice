@@ -1,3 +1,6 @@
+# 1.1.2
+- Fix: `vat_amounts` after a second-pass net shift no longer double-corrects the total by a cent on APIs that honour the field. A net set that still matches without `vat_amounts` is preferred.
+
 # 1.1.1
 - Fix: shipping costs with tax type "auto" and percentage promotions in mixed-rate carts are now split per VAT rate (they were put entirely at one rate, so the VAT breakdown and the total differed from the order).
 - Gross prices: the e-invoice total now equals the order total. Where Shopware's per-line VAT rounding cannot be reached by any net amount (e.g. one item at 9.99 incl. 19 % VAT), the VAT Shopware charged per rate is sent as `vat_amounts` (used by the W System API once its vat_amounts support is live; until then the API ignores the field and behaves as before).
